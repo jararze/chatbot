@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\WhatsappWebhookController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -8,8 +7,7 @@ Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
-Route::get('/webhook/whatsapp', [WhatsappWebhookController::class, 'verify']);
-Route::post('/webhook/whatsapp', [WhatsappWebhookController::class, 'handle']);
+
 
 Route::get('/test-whatsapp-send', function() {
     try {
