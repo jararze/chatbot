@@ -63,6 +63,12 @@ class WhatsappWebhookController extends Controller
                 ]
             );
 
+            Log::info('Conversación', [
+                'id' => $conversation->id,
+                'nueva' => $conversation->wasRecentlyCreated,
+                'paso' => $conversation->current_step
+            ]);
+
             $conversation->last_interaction = now();
             $conversation->save();
 
@@ -72,6 +78,7 @@ class WhatsappWebhookController extends Controller
 
             if ($type === 'text') {
                 $messageText = $message['text']['body'];
+                Log::info('Mensaje de texto recibido', ['texto' => $messageText]);
             } elseif ($type === 'interactive') {
                 $interactiveData = $message['interactive'];
                 $interactiveType = $interactiveData['type'];
@@ -80,6 +87,8 @@ class WhatsappWebhookController extends Controller
                     $messageText = $interactiveData['button_reply']['title'];
                     $messageData['button_id'] = $interactiveData['button_reply']['id'];
                 }
+
+                Log::info('Mensaje interactivo recibido', ['interactive' => $message['interactive']]);
             }
 
             WhatsappMessage::create([
@@ -107,6 +116,13 @@ class WhatsappWebhookController extends Controller
 
     protected function processConversation(WhatsappConversation $conversation, $message)
     {
+
+        Log::info('Procesando conversación', [
+            'phone' => $conversation->phone_number,
+            'message' => $message,
+            'step' => $conversation->current_step
+        ]);
+
         switch ($conversation->current_step) {
             case 'welcome':
                 $this->handleWelcomeStep($conversation);
@@ -335,6 +351,13 @@ class WhatsappWebhookController extends Controller
     protected function sendAndLogMessage(WhatsappConversation $conversation, $message)
     {
         try {
+
+
+            Log::info('Enviando mensaje', [
+                'phone' => $conversation->phone_number,
+                'message' => $message,
+            ]);
+
             $response = $this->whatsappService->sendTextMessage($conversation->phone_number, $message);
 
             WhatsappMessage::create([

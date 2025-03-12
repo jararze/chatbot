@@ -23,6 +23,13 @@ class WhatsappAPIService
     public function sendTextMessage($to, $text)
     {
         try {
+
+            Log::info('Intentando enviar mensaje', [
+                'to' => $to,
+                'text' => $text,
+                'token' => substr($this->accessToken, 0, 10) . '...' // muestra solo los primeros 10 caracteres por seguridad
+            ]);
+
             $response = $this->client->post("{$this->apiVersion}/{$this->phoneNumberId}/messages", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->accessToken}",
