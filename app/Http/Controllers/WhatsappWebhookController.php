@@ -114,14 +114,17 @@ class WhatsappWebhookController extends Controller
                     $messageText = $interactiveData['list_reply']['title'];
                     $messageData['list_id'] = $interactiveData['list_reply']['id'];
 
-                    // También usamos el ID para procesamiento específico
-                    $messageData['list_id_for_action'] = $interactiveData['list_reply']['id'];
+                    // IMPORTANTE: Debemos usar tanto el título como el ID para procesar correctamente
+                    Log::info('Opción de lista seleccionada', [
+                        'title' => $messageText,
+                        'id' => $interactiveData['list_reply']['id']
+                    ]);
 
-                    // Podemos usar el ID para determinar la acción
-                    if (in_array($interactiveData['list_reply']['id'], ['exit', 'end'])) {
-                        Log::info('Opción de salida seleccionada de la lista');
-                        $messageText = 'Finalizar'; // Forzar comportamiento de salida
-                    }
+                    // Almacenar el ID en una variable especial que usaremos en el procesamiento
+                    $conversation->context_data = array_merge($conversation->context_data ?? [], [
+                        'last_selected_option_id' => $interactiveData['list_reply']['id']
+                    ]);
+                    $conversation->save();
                 }
 
                 Log::info('Mensaje interactivo recibido', [
@@ -288,6 +291,46 @@ class WhatsappWebhookController extends Controller
             return;
         }
 
+        // Verificar si tenemos un ID de opción seleccionada (de una list_reply)
+        $selectedOptionId = $conversation->context_data['last_selected_option_id'] ?? null;
+
+        // Si hay un ID seleccionado, lo usamos directamente
+        if ($selectedOptionId) {
+            Log::info('Procesando selección por ID', ['id' => $selectedOptionId]);
+
+            // Remover el ID usado para que no se vuelva a usar
+            unset($conversation->context_data['last_selected_option_id']);
+            $conversation->save();
+
+            switch ($selectedOptionId) {
+                case 'details':
+                    $conversation->current_step = 'show_truck_details';
+                    $conversation->save();
+                    $this->showTruckDetails($conversation, $truck);
+                    return;
+
+                case 'maintenance':
+                    $conversation->current_step = 'show_maintenance';
+                    $conversation->save();
+                    $this->showMaintenanceInfo($conversation, $truck);
+                    return;
+
+                case 'new_plate':
+                    $this->sendAndLogMessage($conversation, "Por favor, ingresa la nueva placa del camión que deseas consultar:");
+                    $conversation->current_step = 'ask_license_plate';
+                    $conversation->license_plate = null;
+                    $conversation->context_data = null;
+                    $conversation->save();
+                    return;
+
+                case 'end':
+                case 'exit':
+                    $this->sendAndLogMessage($conversation, "Gracias por utilizar nuestro servicio. ¡Hasta pronto! 👋");
+                    $this->resetConversation($conversation);
+                    return;
+            }
+        }
+
         $normalizedMessage = strtolower(trim($message));
 
         switch ($normalizedMessage) {
@@ -340,6 +383,32 @@ class WhatsappWebhookController extends Controller
 
     protected function handleTruckDetailsStep(WhatsappConversation $conversation, $message)
     {
+        // Verificar si tenemos un ID de opción seleccionada (de un button_reply)
+        $selectedOptionId = $conversation->context_data['last_selected_option_id'] ?? null;
+
+        // Si hay un ID seleccionado, lo usamos directamente
+        if ($selectedOptionId) {
+            Log::info('Procesando selección por ID en detalles', ['id' => $selectedOptionId]);
+
+            // Remover el ID usado para que no se vuelva a usar
+            unset($conversation->context_data['last_selected_option_id']);
+            $conversation->save();
+
+            if ($selectedOptionId === 'back_to_menu') {
+                $conversation->current_step = 'show_menu';
+                $conversation->save();
+
+                $truck = Truck::find($conversation->context_data['truck_id']);
+                $this->showMainMenu($conversation, $truck);
+                return;
+            }
+            else if ($selectedOptionId === 'exit') {
+                $this->sendAndLogMessage($conversation, "Gracias por utilizar nuestro servicio. ¡Hasta pronto! 👋");
+                $this->resetConversation($conversation);
+                return;
+            }
+        }
+
         // Normalizar el mensaje para facilitar la comparación
         $normalizedMessage = strtolower(trim($message));
 
@@ -367,11 +436,36 @@ class WhatsappWebhookController extends Controller
 
         // Si no es ninguna de las opciones anteriores
         $this->sendAndLogMessage($conversation, "No entendí tu mensaje. Para volver al menú principal, escribe 'volver' o presiona el botón 'Volver al Menú'.\nPara finalizar, escribe 'salir' o presiona el botón 'Finalizar'.");
-
     }
 
     protected function handleMaintenanceStep(WhatsappConversation $conversation, $message)
     {
+        // Verificar si tenemos un ID de opción seleccionada (de un button_reply)
+        $selectedOptionId = $conversation->context_data['last_selected_option_id'] ?? null;
+
+        // Si hay un ID seleccionado, lo usamos directamente
+        if ($selectedOptionId) {
+            Log::info('Procesando selección por ID en mantenimiento', ['id' => $selectedOptionId]);
+
+            // Remover el ID usado para que no se vuelva a usar
+            unset($conversation->context_data['last_selected_option_id']);
+            $conversation->save();
+
+            if ($selectedOptionId === 'back_to_menu') {
+                $conversation->current_step = 'show_menu';
+                $conversation->save();
+
+                $truck = Truck::find($conversation->context_data['truck_id']);
+                $this->showMainMenu($conversation, $truck);
+                return;
+            }
+            else if ($selectedOptionId === 'exit') {
+                $this->sendAndLogMessage($conversation, "Gracias por utilizar nuestro servicio. ¡Hasta pronto! 👋");
+                $this->resetConversation($conversation);
+                return;
+            }
+        }
+
         // Normalizar el mensaje para facilitar la comparación
         $normalizedMessage = strtolower(trim($message));
 
