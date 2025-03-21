@@ -100,6 +100,12 @@ class WhatsappWebhookController extends Controller
                     $messageText = $interactiveData['button_reply']['title'];
                     $messageData['button_id'] = $interactiveData['button_reply']['id'];
 
+                    // Log más detallado de la respuesta del botón
+                    Log::info('Botón detectado', [
+                        'id' => $interactiveData['button_reply']['id'],
+                        'title' => $interactiveData['button_reply']['title']
+                    ]);
+
                     // Procesamiento especial basado en el ID del botón
                     if ($interactiveData['button_reply']['id'] === 'exit') {
                         Log::info('Botón de salida presionado');
@@ -107,6 +113,13 @@ class WhatsappWebhookController extends Controller
                     } else if ($interactiveData['button_reply']['id'] === 'back_to_menu') {
                         Log::info('Botón de volver al menú presionado');
                         $messageText = 'menu'; // Forzar comportamiento de menú
+                    }
+                    // Procesamiento adicional para botones de opciones principales
+                    else if (in_array($interactiveData['button_reply']['id'], ['details', 'maintenance', 'new_plate', 'end'])) {
+                        Log::info('Botón de menú principal presionado', [
+                            'button_id' => $interactiveData['button_reply']['id']
+                        ]);
+                        // No modificamos messageText, pero guardamos el ID para usarlo en el procesamiento
                     }
 
                 } elseif ($interactiveType === 'list_reply') {
@@ -293,51 +306,56 @@ class WhatsappWebhookController extends Controller
 
         $normalizedMessage = strtolower(trim($message));
 
-        switch ($normalizedMessage) {
-            case '1':
-            case 'detalles del camión':
-            case 'detalles':
-            case 'details': // ID del botón
-                $conversation->current_step = 'show_truck_details';
-                $conversation->save();
-                $this->showTruckDetails($conversation, $truck);
-                break;
+        // Check if the message is a button ID from the last message
+        $lastMessage = WhatsappMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'incoming')
+            ->orderBy('created_at', 'desc')
+            ->first();
 
-            case '2':
-            case 'información de mantenimiento':
-            case 'info de mantenimiento':
-            case 'mantenimiento':
-            case 'maintenance': // ID del botón
-                $conversation->current_step = 'show_maintenance';
-                $conversation->save();
-                $this->showMaintenanceInfo($conversation, $truck);
-                break;
+        $buttonId = null;
+        if ($lastMessage && isset($lastMessage->metadata['data']['button_id'])) {
+            $buttonId = $lastMessage->metadata['data']['button_id'];
+            Log::info('Button ID detected', ['button_id' => $buttonId]);
+        }
 
-            case '3':
-            case 'consultar otra placa':
-            case 'otra placa':
-            case 'new_plate': // ID del botón
-                $this->sendAndLogMessage($conversation, "Por favor, ingresa la nueva placa del camión que deseas consultar:");
-                $conversation->current_step = 'ask_license_plate';
-                $conversation->license_plate = null;
-                $conversation->context_data = null;
-                $conversation->save();
-                break;
+        // Try to match by button ID first, then by message text
+        if ($buttonId === 'details' || $normalizedMessage === '1' ||
+            $normalizedMessage === 'detalles del camión' || $normalizedMessage === 'detalles') {
 
-            case '4':
-            case 'finalizar':
-            case 'terminar':
-            case 'end': // ID del botón
-            case 'finalizar consulta':
-            case 'exit': // ID del botón
-                $this->sendAndLogMessage($conversation, "Gracias por utilizar nuestro servicio. ¡Hasta pronto! 👋");
-                $this->resetConversation($conversation);
-                break;
+            $conversation->current_step = 'show_truck_details';
+            $conversation->save();
+            $this->showTruckDetails($conversation, $truck);
 
-            default:
-                $this->sendAndLogMessage($conversation, "No entendí tu selección. Por favor, elige una opción válida o escribe 'salir' para finalizar.");
-                $this->showMainMenu($conversation, $truck);
-                break;
+        } elseif ($buttonId === 'maintenance' || $normalizedMessage === '2' ||
+            $normalizedMessage === 'información de mantenimiento' ||
+            $normalizedMessage === 'info de mantenimiento' ||
+            $normalizedMessage === 'mantenimiento') {
+
+            $conversation->current_step = 'show_maintenance';
+            $conversation->save();
+            $this->showMaintenanceInfo($conversation, $truck);
+
+        } elseif ($buttonId === 'new_plate' || $normalizedMessage === '3' ||
+            $normalizedMessage === 'consultar otra placa' ||
+            $normalizedMessage === 'otra placa') {
+
+            $this->sendAndLogMessage($conversation, "Por favor, ingresa la nueva placa del camión que deseas consultar:");
+            $conversation->current_step = 'ask_license_plate';
+            $conversation->license_plate = null;
+            $conversation->context_data = null;
+            $conversation->save();
+
+        } elseif ($buttonId === 'end' || $buttonId === 'exit' ||
+            $normalizedMessage === '4' || $normalizedMessage === 'finalizar' ||
+            $normalizedMessage === 'terminar' || $normalizedMessage === 'finalizar consulta') {
+
+            $this->sendAndLogMessage($conversation, "Gracias por utilizar nuestro servicio. ¡Hasta pronto! 👋");
+            $this->resetConversation($conversation);
+
+        } else {
+            // If we can't recognize the input
+            $this->sendAndLogMessage($conversation, "No entendí tu selección. Por favor, elige una opción válida o escribe 'salir' para finalizar.");
+            $this->showMainMenu($conversation, $truck);
         }
     }
 
